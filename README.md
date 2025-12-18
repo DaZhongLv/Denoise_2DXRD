@@ -1,87 +1,46 @@
-# Noise2Self: Blind Denoising by Self-Supervision
+# Denoise_2DXRD
+ML models to denoise 2D XRD images in resiprocal space
 
-This repo demonstrates a framework for blind denoising high-dimensional measurements,
-as described in the [paper](https://arxiv.org/abs/1901.11365). It can be used to calibrate 
-classical image denoisers and train deep neural nets; 
-the same principle works on matrices of single-cell gene expression.
+### Data used for machine learning
 
-<img src="https://github.com/czbiohub/noise2self/blob/master/figs/hanzi_movie.gif" width="512" height="256" title="Hanzi Noise2Self">
+The machine learning pipeline uses preprocessed 2D X-ray diffraction (XRD) images of size 512 × 512 stored as float32 arrays. 
+The data originate from a 141 × 121 real-space scan grid, with one diffraction image per scan position.
 
-*The result of training a U-Net to denoise a stack of noisy Chinese characters. Note that the only input is the noisy data; no ground truth is necessary.*
+Prior to machine learning, the following preprocessing steps were applied: 
 
-## Minimal denoising pipeline (what this repo keeps)
+the detector images were cropped to the left 512 × 512 pixel region, 
+invalid detector pixels marked by the sentinel value (2³² − 1) were replaced with zero, 
+and a variance-stabilizing transform was applied to the intensities,
+\[
+I \rightarrow \sqrt{\max(I, 0) + 0.375}.
+\]
 
-This repo has been cleaned down to a minimal, practical pipeline for denoising a detector-image stack stored in **HDF5**:
 
-- `train_noise2self.py`: train a model from noisy data only (self-supervised)
-- `scripts/denoise_h5_stack.py`: apply a trained checkpoint to an HDF5 stack
-- `mask.py`, `pipeline/`, `models/`: core implementation
+The preprocessed data are reshaped into individual images with an added channel dimension for training. 
+During Noise2Self training, random pixels are temporarily masked on-the-fly to define the self-supervised loss; 
+this masking is used only during training and does not permanently modify the data.
 
-Dependencies are in `environment.yml`.
 
-## How Noise2Self training works (concept)
+### Why Noise2Self is used for this XRD data
 
-Because the self-supervised loss is much easier to implement than the data loading, GPU management, logging, and architecture design required for handling any particular dataset, we recommend that you take any existing pipeline for your data and simply modify the training loop.
+The 2D X-ray diffraction images in this dataset are affected by photon-counting (Poisson) noise, detector noise, and occasional defective pixels, while the underlying diffraction signal (rings, peaks, and diffuse scattering) is spatially correlated across neighboring detector pixels. In this setting, clean “ground-truth” diffraction images are not available, making supervised denoising impractical.
 
-### Traditional Supervised Learning
+Noise2Self is a self-supervised denoising method that does not require clean reference data. It exploits the fact that noise in individual detector pixels is approximately independent, whereas the diffraction signal is correlated across neighboring pixels. By masking individual pixels and training a neural network to predict their values from surrounding pixels, the network learns to reconstruct the underlying diffraction signal while suppressing uncorrelated noise.
 
-```
-for i, batch in enumerate(data_loader):
-    noisy_images, clean_images = batch
-    output = model(noisy_images)
-    loss = loss_function(output, clean_images)
-```
+Because the method does not use paired noisy–clean data, it is well suited for experimental XRD measurements where repeated acquisitions or noise-free references are unavailable.
 
-### Self-Supervised Learning
+### Noise2Self masking principle
 
-```
-from mask import Masker
-masker = Masker()
-for i, batch in enumerate(data_loader):
-    noisy_images, _ = batch
-    input, mask = masker.mask(noisy_images, i)
-    output = model(input)
-    loss = loss_function(output*mask, noisy_images*mask)
-```
+During Noise2Self training, a subset of pixels in each diffraction image is randomly masked (set to zero) and treated as unknown. A convolutional neural network is trained to predict the values of these masked pixels using only the surrounding, unmasked pixels. The training loss is computed exclusively on the masked pixels, ensuring that the network cannot trivially copy the input and instead learns to reconstruct the underlying signal from local spatial context. This exploits the spatial correlation of diffraction features and the approximate pixel-wise independence of noise.
 
-## HDF5 stacks (.h5)
+### Inspiration
+Our model is inspired by the **Noise2Self** self-supervised denoising framework:
+> **Noise2Self: Blind Denoising by Self-Supervision**  
+> Joshua Batson, Loïc Royer  
+> ICML 2019
 
-If your stack is in an HDF5 file you can train directly.
+Noise2Self introduces a self-supervised denoising principle that enables learning from single noisy images without clean targets.
 
-### Expected dataset format
-
-- Dataset key: `/data` (preferred) or `/X` (fallback)
-- Dataset shape:
-  - `(N, H, W)` or
-  - `(N0, N1, H, W)` (treated as a flattened stack of `N=N0*N1`)
-
-### Train
-
-Patch-based (recommended):
-
-```
-python train_noise2self.py --h5 path\to\your.h5 --max-samples 1000 --device cuda --model unet --patch 128 --batch 16 --epochs 10 --amp
-```
-
-Recommended: enable validation + save best + early stopping:
-
-```
-python train_noise2self.py --h5 path\to\your.h5 --max-samples 1000 --device cuda --model unet --patch 128 --batch 16 --epochs 200 --amp --val-frac 0.1 --save-best --early-stop-patience 10 --early-stop-min-delta 1e-5
-```
-
-Full-frame (no patch sampling):
-
-```
-python train_noise2self.py --h5 path\to\your.h5 --max-samples 1000 --device cuda --model unet --patch 0 --batch 2 --epochs 10 --amp
-```
-
-### Denoise (inference) an HDF5 stack
-
-If you trained with `--normalize none --no-scale-integers`, you can require reconstructable “counts-space” output:
-
-```
-python scripts/denoise_h5_stack.py --h5 path\to\your.h5 --ckpt runs/noise2self/ckpt_best.pt --out path\to\denoised.h5 --device cuda --batch 32 --amp --require-reconstructable
-```
-
+🔗 Paper: https://arxiv.org/abs/1901.11365
 
 
