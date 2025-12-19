@@ -1,5 +1,5 @@
 # Denoise_2DXRD
-ML models to denoise 2D XRD images in resiprocal space
+ML models to denoise 2D XRD images in reciprocal space
 
 ### Reproducing the plots (submitted document + video)
 
@@ -27,9 +27,9 @@ Prior to machine learning, the following preprocessing steps were applied:
 the detector images were cropped to the left 512 × 512 pixel region, 
 invalid detector pixels marked by the sentinel value (2³² − 1) were replaced with zero, 
 and a variance-stabilizing transform was applied to the intensities,
-\[
+$$
 I \rightarrow \sqrt{\max(I, 0) + 0.375}.
-\]
+$$
 
 
 The preprocessed data are reshaped into individual images with an added channel dimension for training. 
@@ -50,7 +50,7 @@ Because the method does not use paired noisy–clean data, it is well suited for
 During Noise2Self training, a subset of pixels in each diffraction image is randomly masked (set to zero) and treated as unknown. A convolutional neural network is trained to predict the values of these masked pixels using only the surrounding, unmasked pixels. The training loss is computed exclusively on the masked pixels, ensuring that the network cannot trivially copy the input and instead learns to reconstruct the underlying signal from local spatial context. This exploits the spatial correlation of diffraction features and the approximate pixel-wise independence of noise.
 
 ### Inspiration
-Our model is inspired by the **Noise2Self** self-supervised denoising framework:
+Our model **directly uses the Noise2Self self-supervised denoising architecture** for our XRD denoising case:
 > **Noise2Self: Blind Denoising by Self-Supervision**  
 > Joshua Batson, Loïc Royer  
 > ICML 2019
